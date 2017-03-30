@@ -3,12 +3,22 @@ import json
 import datetime
 import csv
 import time
+from MySQL_Actions import MySQL_Codes
+import settings
 
-app_id = "<FILL IN>"
-app_secret = "<FILL IN>" # DO NOT SHARE WITH ANYONE!
-group_id = "759985267390294"
+app_id = settings.app_id
+app_secret = settings.app_secret # DO NOT SHARE WITH ANYONE!
+#group_id = settings.group_id_for_posts
 
 access_token = app_id + "|" + app_secret
+
+db_action = MySQL_Codes()
+
+def work_as_scheduled(sgroup_id):
+    scrapeFacebookPageFeedStatus(sgroup_id, access_token)
+
+def reset_deleted_tag():
+    db_action.ID_checker_already_deleted = {}
 
 def request_until_succeed(url):
     req = urllib2.Request(url)
@@ -144,19 +154,19 @@ def processFacebookPageFeedStatus(status, access_token):
             num_angrys)
 
 def scrapeFacebookPageFeedStatus(group_id, access_token):
-    with open('%s_facebook_statuses.csv' % group_id, 'wb') as file:
-        w = csv.writer(file)
-        w.writerow(["status_id", "status_message", "status_author", 
-            "link_name", "status_type", "status_link",
-            "status_published", "num_reactions", "num_comments", 
-            "num_shares", "num_likes", "num_loves", "num_wows", 
-            "num_hahas", "num_sads", "num_angrys"])
+    #with open('%s_facebook_statuses.csv' % group_id, 'wb') as file:
+    #    w = csv.writer(file)
+    #    w.writerow(["status_id", "status_message", "status_author",
+    #        "link_name", "status_type", "status_link",
+    #        "status_published", "num_reactions", "num_comments",
+    #        "num_shares", "num_likes", "num_loves", "num_wows",
+    #        "num_hahas", "num_sads", "num_angrys"])
 
         has_next_page = True
         num_processed = 0   # keep a count on how many we've processed
         scrape_starttime = datetime.datetime.now()
 
-        print "Scraping %s Facebook Page: %s\n" % \
+        print "Scraping %s Facebook Group: %s\n" % \
                 (group_id, scrape_starttime)
 
         statuses = getFacebookPageFeedData(group_id, access_token, 100)
@@ -165,9 +175,10 @@ def scrapeFacebookPageFeedStatus(group_id, access_token):
             for status in statuses['data']:
 
                 # Ensure it is a status with the expected metadata
-                if 'reactions' in status:            
-                    w.writerow(processFacebookPageFeedStatus(status, \
-                                                            access_token))
+                if 'reactions' in status:
+                    db_action.save_to_db(processFacebookPageFeedStatus(status,access_token),'status',group_id)
+                    #w.writerow(processFacebookPageFeedStatus(status, \
+                    #                                        access_token))
 
                 # output progress occasionally to make sure code is not
                 # stalling
@@ -183,13 +194,14 @@ def scrapeFacebookPageFeedStatus(group_id, access_token):
             else:
                 has_next_page = False
 
-
+        #db_action.close_db_connection()
         print "\nDone!\n%s Statuses Processed in %s" % \
                 (num_processed, datetime.datetime.now() - scrape_starttime)
 
 
 if __name__ == '__main__':
-    scrapeFacebookPageFeedStatus(group_id, access_token)
+    print ('Invalid action! Please run "crawler_job.py" instead.')
+#    scrapeFacebookPageFeedStatus(group_id, access_token)
 
 
 # The CSV can be opened in all major statistical programs. Have fun! :)

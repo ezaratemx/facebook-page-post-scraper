@@ -3,12 +3,22 @@ import json
 import datetime
 import csv
 import time
+from MySQL_Actions import MySQL_Codes
+import settings
 
-app_id = "<FILL IN>"
-app_secret = "<FILL IN>" # DO NOT SHARE WITH ANYONE!
-file_id = "cnn"
+app_id = settings.app_id
+app_secret = settings.app_secret # DO NOT SHARE WITH ANYONE!
+#file_id = settings.group_or_page_id_for_comments
 
 access_token = app_id + "|" + app_secret
+
+db_action = MySQL_Codes()
+
+def work_as_scheduled(sfile_id):
+    scrapeFacebookPageFeedComments(sfile_id, access_token)
+
+def reset_deleted_tag():
+    db_action.ID_checker_already_deleted = {}
 
 def request_until_succeed(url):
     req = urllib2.Request(url)
@@ -87,11 +97,11 @@ def processFacebookComment(comment, status_id, parent_id = ''):
     return (comment_id, status_id, parent_id, comment_message, comment_author,
             comment_published, comment_likes)
 
-def scrapeFacebookPageFeedComments(page_id, access_token):
-    with open('%s_facebook_comments.csv' % file_id, 'wb') as file:
-        w = csv.writer(file)
-        w.writerow(["comment_id", "status_id", "parent_id", "comment_message", 
-            "comment_author", "comment_published", "comment_likes"])
+def scrapeFacebookPageFeedComments(file_id, access_token):
+    #with open('%s_facebook_comments.csv' % file_id, 'wb') as file:
+    #    w = csv.writer(file)
+    #    w.writerow(["comment_id", "status_id", "parent_id", "comment_message",
+    #        "comment_author", "comment_published", "comment_likes"])
 
         num_processed = 0   # keep a count on how many we've processed
         scrape_starttime = datetime.datetime.now()
@@ -99,78 +109,80 @@ def scrapeFacebookPageFeedComments(page_id, access_token):
         print "Scraping %s Comments From Posts: %s\n" % \
                 (file_id, scrape_starttime)
 
-        with open('%s_facebook_statuses.csv' % file_id, 'rb') as csvfile:
-            reader = csv.DictReader(csvfile)
+        #with open('%s_facebook_statuses.csv' % file_id, 'rb') as csvfile:
+        reader = db_action.get_table_data('status',file_id)
 
-            #reader = [dict(status_id='759985267390294_1158001970921953')]
+        #reader = [dict(status_id='759985267390294_1158001970921953')]
 
-            for status in reader:
-                has_next_page = True
+        for status in reader:
+            has_next_page = True
 
-                comments = getFacebookCommentFeedData(status['status_id'], 
-                        access_token, 100)
+            comments = getFacebookCommentFeedData(status['status_id'],
+                    access_token, 100)
 
-                while has_next_page and comments is not None:				
-                    for comment in comments['data']:
-                        w.writerow(processFacebookComment(comment, 
-                            status['status_id']))
+            while has_next_page and comments is not None:
+                for comment in comments['data']:
+                    db_action.save_to_db(processFacebookComment(comment,status['status_id']),'comments',file_id)
+                    #w.writerow(processFacebookComment(comment,
+                    #    status['status_id']))
 
-                        if 'comments' in comment:
-                            has_next_subpage = True
+                    if 'comments' in comment:
+                        has_next_subpage = True
 
-                            subcomments = getFacebookCommentFeedData(
-                                    comment['id'], access_token, 100)
+                        subcomments = getFacebookCommentFeedData(
+                                comment['id'], access_token, 100)
 
-                            while has_next_subpage:
-                                for subcomment in subcomments['data']:
-                                    # print (processFacebookComment(
-                                        # subcomment, status['status_id'], 
-                                        # comment['id']))
-                                    w.writerow(processFacebookComment(
-                                            subcomment, 
-                                            status['status_id'], 
-                                            comment['id']))
+                        while has_next_subpage:
+                            for subcomment in subcomments['data']:
+                                # print (processFacebookComment(
+                                    # subcomment, status['status_id'],
+                                    # comment['id']))
+                                db_action.save_to_db(processFacebookComment(
+                                        subcomment,
+                                        status['status_id'],
+                                        comment['id']),'comments',file_id)
 
-                                    num_processed += 1
-                                    if num_processed % 1000 == 0:
-                                        print "%s Comments Processed: %s" % \
-                                                (num_processed, 
-                                                    datetime.datetime.now())
+                                num_processed += 1
+                                if num_processed % 1000 == 0:
+                                    print "%s Comments Processed: %s" % \
+                                            (num_processed,
+                                                datetime.datetime.now())
 
-                                if 'paging' in subcomments:
-                                    if 'next' in subcomments['paging']:
-                                        subcomments = json.loads(
-                                                request_until_succeed(
-                                                    subcomments['paging']\
-                                                               ['next']))
-                                    else:
-                                        has_next_subpage = False
+                            if 'paging' in subcomments:
+                                if 'next' in subcomments['paging']:
+                                    subcomments = json.loads(
+                                            request_until_succeed(
+                                                subcomments['paging']\
+                                                           ['next']))
                                 else:
                                     has_next_subpage = False
+                            else:
+                                has_next_subpage = False
 
-                        # output progress occasionally to make sure code is not
-                        # stalling
-                        num_processed += 1
-                        if num_processed % 1000 == 0:
-                            print "%s Comments Processed: %s" % \
-                                    (num_processed, datetime.datetime.now())
+                    # output progress occasionally to make sure code is not
+                    # stalling
+                    num_processed += 1
+                    if num_processed % 1000 == 0:
+                        print "%s Comments Processed: %s" % \
+                                (num_processed, datetime.datetime.now())
 
-                    if 'paging' in comments:		
-                        if 'next' in comments['paging']:
-                            comments = json.loads(request_until_succeed(
-                                        comments['paging']['next']))
-                        else:
-                            has_next_page = False
+                if 'paging' in comments:
+                    if 'next' in comments['paging']:
+                        comments = json.loads(request_until_succeed(
+                                    comments['paging']['next']))
                     else:
                         has_next_page = False
+                else:
+                    has_next_page = False
 
-
+        #db_action.close_db_connection()
         print "\nDone!\n%s Comments Processed in %s" % \
                 (num_processed, datetime.datetime.now() - scrape_starttime)
 
 
 if __name__ == '__main__':
-    scrapeFacebookPageFeedComments(file_id, access_token)
+    print ('Invalid action! Please run "crawler_job.py" instead.')
+#    scrapeFacebookPageFeedComments(file_id, access_token)
 
 
 # The CSV can be opened in all major statistical programs. Have fun! :)
